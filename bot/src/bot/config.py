@@ -58,6 +58,8 @@ class Settings:
     max_tokens: int
     history_messages: int
     edit_interval: float
+    admin_user_ids: frozenset[int]
+    allow_mentions: bool
     allow_all: bool
     allowed_guild_ids: frozenset[int]
     user_cooldown: float
@@ -66,9 +68,17 @@ class Settings:
     line_interval: float
     log_level: str
 
+    def is_admin(self, user_id: int) -> bool:
+        """Privileged user: admin-only commands (e.g. /status), usable from any server."""
+        return user_id in self.admin_user_ids
+
+    def is_trusted(self, user_id: int) -> bool:
+        """Always allowed to chat, and exempt from the cooldown."""
+        return user_id in self.allowed_user_ids or user_id in self.admin_user_ids
+
     def is_permitted(self, user_id: int, guild_id: int | None) -> bool:
         """Trusted users always; everyone else only if ALLOW_ALL_USERS (optionally per guild)."""
-        if user_id in self.allowed_user_ids:
+        if self.is_trusted(user_id):
             return True
         if not self.allow_all:
             return False
@@ -87,8 +97,11 @@ class Settings:
             raise ConfigError("DISCORD_TOKEN is not set")
 
         allowed = parse_ids(env.get("ALLOWED_USER_IDS", ""))
-        if not allowed:
-            raise ConfigError("ALLOWED_USER_IDS is empty; the allowlist is mandatory")
+        admin_raw = env.get("ADMIN_USER_IDS", "").strip()
+        # Unset ADMIN_USER_IDS = every allowlisted user is an admin (the old behaviour).
+        admins = parse_ids(admin_raw, "ADMIN_USER_IDS") if admin_raw else allowed
+        if not allowed and not admins:
+            raise ConfigError("ALLOWED_USER_IDS and ADMIN_USER_IDS are both empty")
 
         guild_raw = env.get("DISCORD_GUILD_ID", "").strip()
         try:
@@ -114,6 +127,8 @@ class Settings:
             max_tokens=int(_num(env, "MAX_TOKENS", 1024, int)),
             history_messages=int(_num(env, "HISTORY_MESSAGES", 24, int)),
             edit_interval=float(_num(env, "EDIT_INTERVAL", 1.2, float)),
+            admin_user_ids=admins,
+            allow_mentions=_bool(env.get("ALLOW_MENTIONS"), False),
             allow_all=_bool(env.get("ALLOW_ALL_USERS"), False),
             allowed_guild_ids=parse_ids(env.get("ALLOWED_GUILD_IDS", ""), "ALLOWED_GUILD_IDS"),
             user_cooldown=float(_num(env, "USER_COOLDOWN", 5.0, float)),

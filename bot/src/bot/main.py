@@ -57,14 +57,22 @@ class HarnessBot(discord.Client):
     def __init__(self, settings: Settings):
         intents = discord.Intents.default()
         intents.message_content = True  # privileged: enable in the Developer Portal
-        super().__init__(intents=intents, allowed_mentions=discord.AllowedMentions.none())
+        if settings.allow_mentions:
+            # Model output may ping users, roles, @everyone and @here (Discord still needs the
+            # bot to have "Mention Everyone" in that server). Replies never ping the author.
+            mentions = discord.AllowedMentions(
+                everyone=True, users=True, roles=True, replied_user=False
+            )
+        else:
+            mentions = discord.AllowedMentions.none()
+        super().__init__(intents=intents, allowed_mentions=mentions)
         self.settings = settings
         self.tree = AllowlistTree(self)
         self.state = State(settings.state_path)
         self.client = HarnessClient(
             settings.harness_url,
             settings.harness_token,
-            default_user_id=min(settings.allowed_user_ids),
+            default_user_id=min(settings.allowed_user_ids | settings.admin_user_ids),
         )
         self.backend = Backend(self.client, self.state, settings)
         self.cooldown = Cooldown(settings.user_cooldown)
@@ -123,6 +131,9 @@ class HarnessBot(discord.Client):
     def _register_commands(self) -> None:
         @self.tree.command(name="status", description="Show harness status")
         async def status(interaction: discord.Interaction) -> None:
+            if not self.settings.is_admin(interaction.user.id):
+                await interaction.response.send_message("Admin only.", ephemeral=True)
+                return
             await interaction.response.defer(ephemeral=True)
             try:
                 st = await self.client.status(interaction.user.id)
@@ -169,9 +180,7 @@ class HarnessBot(discord.Client):
             await channel.send("Hi! Send me a message after the mention and I'll reply.")
             return
 
-        if msg.author.id not in self.settings.allowed_user_ids and self.cooldown.check(
-            msg.author.id
-        ):
+        if not self.settings.is_trusted(msg.author.id) and self.cooldown.check(msg.author.id):
             with contextlib.suppress(discord.HTTPException):
                 await msg.add_reaction("⏳")  # slow down; trusted users are exempt
             return
