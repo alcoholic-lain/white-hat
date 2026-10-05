@@ -9,9 +9,10 @@ tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tower = "0.4"
-tower-http = { version = "0.5", features = ["trace", "cors"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+reqwest = { version = "0.11", features = ["json"] }
 
-[dependencies.harness-core]
-path = "../core"
+harness-llm-lmstudio = { path = "../llm-lmstudio" }
+tokio-stream = "0.1"
